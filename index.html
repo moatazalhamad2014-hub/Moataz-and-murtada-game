@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>Moataz Tomb of the Mask</title>
+
+<style>
+body {
+  margin: 0;
+  background: black;
+  font-family: Arial;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+/* SCREENS */
+#menu, #end {
+  text-align: center;
+}
+
+#menu h1 {
+  color: cyan;
+  margin-bottom: 30px;
+}
+
+button {
+  padding: 15px 40px;
+  font-size: 20px;
+  background: cyan;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+/* GAME */
+#game {
+  display: none;
+  grid-template-columns: repeat(7, 40px);
+  grid-template-rows: repeat(10, 40px);
+  gap: 2px;
+}
+
+.cell {
+  width: 40px;
+  height: 40px;
+  background: #111;
+}
+
+.wall { background: #333; }
+
+/* Player */
+.player {
+  background: cyan;
+  border-radius: 50%;
+  position: relative;
+}
+.player::before, .player::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  width: 6px;
+  height: 6px;
+  background: black;
+  border-radius: 50%;
+}
+.player::before { left: 10px; }
+.player::after { right: 10px; }
+
+/* Enemy */
+.enemy {
+  background: red;
+  border-radius: 50%;
+}
+
+/* Trap */
+.trap {
+  background: purple;
+}
+
+/* Gate */
+.gate {
+  background: linear-gradient(45deg, gold, orange);
+}
+</style>
+</head>
+
+<body>
+
+<!-- MENU -->
+<div id="menu">
+  <h1>Moataz Tomb of the Mask</h1>
+  <button id="playBtn">PLAY</button>
+</div>
+
+<!-- GAME -->
+<div id="game"></div>
+
+<!-- END -->
+<div id="end" style="display:none;">
+  <h1 style="color:gold;">🎉 لقد أنهيت اللعبة</h1>
+  <p>مبارك لك</p>
+  <p>صانع اللعبة: <b>معتز حمد رمضان</b></p>
+  <button id="restartBtn">العودة للقائمة</button>
+</div>
+
+<script>
+/* ===== AUDIO (مضمون على الجوال) ===== */
+let audioCtx;
+let musicOsc;
+
+function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // 🎵 موسيقى خلفية
+  musicOsc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  musicOsc.type = "triangle";
+  musicOsc.frequency.value = 180;
+  gain.gain.value = 0.03;
+  musicOsc.connect(gain).connect(audioCtx.destination);
+  musicOsc.start();
+}
+
+function swipeSound() {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = "square";
+  osc.frequency.value = 600;
+  gain.gain.value = 0.1;
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.05);
+}
+
+/* ===== GAME LOGIC ===== */
+const menu = document.getElementById("menu");
+const game = document.getElementById("game");
+const endScreen = document.getElementById("end");
+const playBtn = document.getElementById("playBtn");
+const restartBtn = document.getElementById("restartBtn");
+
+const levels = [
+[
+"#######",
+"#P..E.#",
+"#.....#",
+"#..^..#",
+"#.....#",
+"#..E..#",
+"#.....#",
+"#.....#",
+"#....G#",
+"#######"
+],
+[
+"#######",
+"#P.#E.#",
+"#.#...#",
+"#.^#^.#",
+"#...#.#",
+"#.E...#",
+"#.#.#.#",
+"#.....#",
+"#..#..G#",
+"#######"
+],
+[
+"#######",
+"#P#E..#",
+"#.#.#.#",
+"#.^#^.#",
+"#...#.#",
+"###.#E#",
+"#.....#",
+"#.#.#.#",
+"#.#..G#",
+"#######"
+]
+];
+
+let currentLevel = 0;
+let map, playerPos, enemies = [];
+
+/* START */
+playBtn.onclick = () => {
+  initAudio(); // 🔥 تشغيل الصوت بعد الضغط (مهم للجوال)
+  menu.style.display = "none";
+  endScreen.style.display = "none";
+  game.style.display = "grid";
+  currentLevel = 0;
+  initLevel();
+};
+
+function initLevel() {
+  enemies = [];
+  map = levels[currentLevel];
+  map.forEach((row, y) => {
+    [...row].forEach((c, x) => {
+      if (c === "P") playerPos = { x, y };
+      if (c === "E") enemies.push({ x, y, dir: 1 });
+    });
+  });
+  draw();
+}
+
+function draw() {
+  game.innerHTML = "";
+  map.forEach((row, y) => {
+    [...row].forEach((c, x) => {
+      const d = document.createElement("div");
+      d.className = "cell";
+      if (c === "#") d.classList.add("wall");
+      if (c === "^") d.classList.add("trap");
+      if (c === "G") d.classList.add("gate");
+      enemies.forEach(e => {
+        if (e.x === x && e.y === y) d.classList.add("enemy");
+      });
+      if (playerPos.x === x && playerPos.y === y)
+        d.classList.add("player");
+      game.appendChild(d);
+    });
+  });
+}
+
+function move(dx, dy) {
+  swipeSound(); // 🔊 صوت السحب
+  let x = playerPos.x;
+  let y = playerPos.y;
+  while (map[y + dy][x + dx] !== "#") {
+    x += dx; y += dy;
+    if (map[y][x] === "^") return lose();
+    if (map[y][x] === "G") return win();
+  }
+  playerPos = { x, y };
+  draw();
+}
+
+setInterval(() => {
+  if (game.style.display !== "grid") return;
+  enemies.forEach(e => {
+    if (map[e.y][e.x + e.dir] === "#") e.dir *= -1;
+    e.x += e.dir;
+    if (e.x === playerPos.x && e.y === playerPos.y) lose();
+  });
+  draw();
+}, 600);
+
+function win() {
+  currentLevel++;
+  if (currentLevel >= levels.length) {
+    game.style.display = "none";
+    endScreen.style.display = "block";
+  } else initLevel();
+}
+
+function lose() {
+  alert("☠ خسرت!");
+  initLevel();
+}
+
+/* SWIPE */
+let sx, sy;
+document.addEventListener("touchstart", e => {
+  sx = e.touches[0].clientX;
+  sy = e.touches[0].clientY;
+});
+document.addEventListener("touchend", e => {
+  let dx = e.changedTouches[0].clientX - sx;
+  let dy = e.changedTouches[0].clientY - sy;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx > 30) move(1,0);
+    else if (dx < -30) move(-1,0);
+  } else {
+    if (dy > 30) move(0,1);
+    else if (dy < -30) move(0,-1);
+  }
+});
+
+restartBtn.onclick = () => {
+  endScreen.style.display = "none";
+  menu.style.display = "block";
+};
+</script>
+
+</body>
+</html>
